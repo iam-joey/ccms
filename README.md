@@ -21,15 +21,30 @@ Say you have two accounts, **A** (personal) and **B** (work).
 | B | nothing |
 | A again | A's chats, all back |
 
-Nothing was deleted. The Claude app keeps a separate folder of chats for each
-account, and only ever shows you one of them.
+Nothing was deleted. The Claude app keeps a **separate folder of chats for each
+account**, and only ever shows you the one you are signed into:
+
+```mermaid
+flowchart LR
+    A["👤 Account A<br/>personal"] --> FA["📁 A's folder<br/>142 chats"]
+    B["👤 Account B<br/>work"] --> FB["📁 B's folder<br/>empty"]
+    C["👤 Account C<br/>team"] --> FC["📁 C's folder<br/>empty"]
+```
 
 Same thing happens when a plan expires, when you join a Team, or when you add
-a third account.
+another account.
 
 ## What CCMS does
 
-It puts the chats in one folder and points every account at it.
+It puts the chats in one folder and points **every** account at it:
+
+```mermaid
+flowchart LR
+    A["👤 Account A"] --> P["📁 One shared list<br/>142 chats"]
+    B["👤 Account B"] --> P
+    C["👤 Account C"] --> P
+    D["👤 ...account 7"] --> P
+```
 
 | You are signed in as | Your sidebar shows |
 | --- | --- |
@@ -37,8 +52,11 @@ It puts the chats in one folder and points every account at it.
 | B | every chat |
 | a brand new account C | every chat |
 
-Start a chat while on B, switch to A — it's there. It works both ways, for as
-many accounts as you have.
+Start a chat while on B, switch to A — it's there. It works both ways.
+
+**Any number of accounts.** Two, five, ten — they all point at the same list,
+and each new one joins it. There is no limit and nothing to configure per
+account.
 
 One bash script. Nothing to install.
 
@@ -78,6 +96,16 @@ folder for it. Run `ccms share --apply` once and it joins the shared list.
 
 `ccms watch --install` does that for you from then on. It sleeps until a folder
 changes — no cron, no polling, nothing running in the background.
+
+```mermaid
+flowchart LR
+    S["Sign in with a<br/>new account"] --> N["App makes an<br/>empty folder"]
+    N --> W{"Watcher<br/>installed?"}
+    W -->|yes| A["Linked in seconds,<br/>you do nothing"]
+    W -->|no| M["Run<br/>ccms share --apply"]
+    A --> D["Every chat<br/>shows up"]
+    M --> D
+```
 
 ## Undo
 
