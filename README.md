@@ -62,19 +62,31 @@ One bash script. Nothing to install.
 
 ## Install
 
+**Step 1 — download the script and check your Mac.** Run these three lines
+together, in whatever folder you like:
+
 ```bash
 curl -fsSLO https://raw.githubusercontent.com/iam-joey/ccms/main/ccms.sh
 chmod +x ccms.sh
 ./ccms.sh check
 ```
 
-To use it as a command anywhere:
+That is the whole install. You run it as `./ccms.sh <command>` from that
+folder — `./ccms.sh share`, `./ccms.sh status`, and so on.
+
+**Step 2 — optional.** If you would rather type `ccms` from anywhere instead
+of `./ccms.sh`, move the file you just downloaded onto your PATH:
 
 ```bash
-install -m 755 ccms.sh /usr/local/bin/ccms
+sudo install -m 755 ccms.sh /usr/local/bin/ccms
 ```
 
+It asks for your Mac password, because `/usr/local/bin` is a system folder.
+Skip this and everything still works — just keep the `./ccms.sh` prefix.
+
 ## Commands
+
+Written as `ccms` below. If you skipped step 2, type `./ccms.sh` instead.
 
 | Command | What it does |
 | --- | --- |
