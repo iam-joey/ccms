@@ -9,7 +9,13 @@
  ╚═════╝ ╚═════╝╚═╝     ╚═╝╚══════╝
 ```
 
-One Claude Code sidebar for every Claude account on your Mac.
+**Share your Claude Code sessions across every Claude account on your Mac.**
+
+Your Claude Code chats are stored per account, so each account sees only its
+own. CCMS puts them in one place, so every account you sign in with shows the
+same sessions — personal, work, Team, old plan, new plan.
+
+For the Claude desktop app on macOS.
 
 ## The problem
 

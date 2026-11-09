@@ -1,6 +1,6 @@
 #!/bin/bash
 # CCMS - Claude Code Multi-Session
-# One Claude Code sidebar for every Claude account on this Mac.
+# Share your Claude Code sessions across every Claude account on this Mac.
 #
 # FOR THE CLAUDE DESKTOP APP ON macOS ONLY. Not the `claude` CLI (its
 # transcripts live in ~/.claude/projects and are not account-scoped, so they
@@ -117,7 +117,7 @@ ART
   sleep 0.2
   printf '\n  %sClaude Code Multi-Session%s %sv%s%s\n' \
     "$C_B" "$C_OFF" "$C_DIM" "$VERSION" "$C_OFF"
-  printf '  %sOne sidebar for every Claude account on this Mac%s\n' "$C_DIM" "$C_OFF"
+  printf '  %sClaude Code sessions, shared across every account%s\n' "$C_DIM" "$C_OFF"
   sleep 1.3
   printf '\n'
 }
