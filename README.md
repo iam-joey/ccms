@@ -11,24 +11,11 @@
 
 **Share your Claude Code sessions across every Claude account on your Mac.**
 
-Your Claude Code chats are stored per account, so each account sees only its
-own. CCMS puts them in one place, so every account you sign in with shows the
-same sessions — personal, work, Team, old plan, new plan.
-
-For the Claude desktop app on macOS.
+For the Claude desktop app on macOS. One bash script, nothing to install.
 
 ## The problem
 
-Say you have two accounts, **A** (personal) and **B** (work).
-
-| You are signed in as | Your sidebar shows |
-| --- | --- |
-| A | A's chats |
-| B | nothing |
-| A again | A's chats, all back |
-
-Nothing was deleted. The Claude app keeps a **separate folder of chats for each
-account**, and only ever shows you the one you are signed into:
+Your chats are stored per account, so each account sees only its own:
 
 ```mermaid
 flowchart LR
@@ -37,12 +24,12 @@ flowchart LR
     C["👤 Account C<br/>team"] --> FC["📁 C's folder<br/>empty"]
 ```
 
-Same thing happens when a plan expires, when you join a Team, or when you add
-another account.
+Sign in with another account and the sidebar looks wiped. Nothing was deleted.
+Same thing when a plan expires or you join a Team.
 
 ## What CCMS does
 
-It puts the chats in one folder and points **every** account at it:
+Puts the chats in one place and points every account at it:
 
 ```mermaid
 flowchart LR
@@ -52,37 +39,13 @@ flowchart LR
     D["👤 ...account 7"] --> P
 ```
 
-| You are signed in as | Your sidebar shows |
-| --- | --- |
-| A | every chat |
-| B | every chat |
-| a brand new account C | every chat |
+Any number of accounts. Nothing to configure per account.
 
-**Any number of accounts.** Two, five, ten — they all point at the same list,
-and each new one joins it. There is no limit and nothing to configure per
-account.
-
-One bash script. Nothing to install.
-
-## It works in every direction
-
-This is sharing, not a one-time export. Every account reads *and writes* the
-same list, so it works from any account to any other:
-
-- **Carry on a chat from another account.** Start it signed in as A, switch to
-  B, open it and keep typing. Full scrollback, full context — it is the same
-  session, not a copy of it.
-- **New chats appear everywhere at once.** Start one on B and it is already
-  there on A and C. Nothing to re-run, no sync step, no waiting.
-- **Renaming and archiving carry over too**, because the title and the
-  archived flag live inside the session itself.
-- **Nothing can drift.** There is one real folder and the accounts are
-  symlinks to it, so there is no second copy to fall out of date.
+**It works both ways.** Start a chat on A, switch to B, open it and keep
+typing — same session, full scrollback. A chat started on B is already on A.
+Renaming and archiving carry over too.
 
 ## Install
-
-**Step 1 — download the script and check your Mac.** Run these three lines
-together, in whatever folder you like:
 
 ```bash
 curl -fsSLO https://raw.githubusercontent.com/iam-joey/ccms/main/ccms.sh
@@ -90,22 +53,16 @@ chmod +x ccms.sh
 ./ccms.sh check
 ```
 
-That is the whole install. You run it as `./ccms.sh <command>` from that
-folder — `./ccms.sh share`, `./ccms.sh status`, and so on.
+That's the whole install — run it as `./ccms.sh <command>`.
 
-**Step 2 — optional.** If you would rather type `ccms` from anywhere instead
-of `./ccms.sh`, move the file you just downloaded onto your PATH:
+Optional: to type `ccms` from anywhere instead, move the file you just
+downloaded onto your PATH.
 
 ```bash
 sudo install -m 755 ccms.sh /usr/local/bin/ccms
 ```
 
-It asks for your Mac password, because `/usr/local/bin` is a system folder.
-Skip this and everything still works — just keep the `./ccms.sh` prefix.
-
 ## Commands
-
-Written as `ccms` below. If you skipped step 2, type `./ccms.sh` instead.
 
 | Command | What it does |
 | --- | --- |
@@ -116,17 +73,14 @@ Written as `ccms` below. If you skipped step 2, type `./ccms.sh` instead.
 | `ccms status` | checks everything is still linked |
 | `ccms revert --apply` | undoes it — every chat back where it came from |
 | `ccms watch --install` | keeps new accounts shared automatically |
-| `ccms watch --uninstall` | removes that |
 
-Quit the Claude app before `--apply`. Add `--force` to do it anyway.
+Quit the Claude app before `--apply`, or add `--force`. Run `ccms --help` for
+the rest.
 
 ## New accounts
 
 Sign in with a new account, or join a Team, and the app makes a new empty
-folder for it. Run `ccms share --apply` once and it joins the shared list.
-
-`ccms watch --install` does that for you from then on. It sleeps until a folder
-changes — no cron, no polling, nothing running in the background.
+folder for it:
 
 ```mermaid
 flowchart LR
@@ -138,31 +92,23 @@ flowchart LR
     M --> D
 ```
 
+The watcher sleeps until a folder changes — no cron, no polling, nothing
+running in the background.
+
 ## Undo
 
-`ccms share --apply` writes down everything it moved, and keeps a backup of
-every folder it replaced, in `~/.ccms`. `ccms revert --apply` puts it all back.
+`ccms share --apply` writes down everything it moved and backs up every folder
+it replaced, in `~/.ccms`. `ccms revert --apply` puts it all back.
 
 ## Notes
 
-- macOS, and the Claude **desktop app** only. The `claude` CLI stores its
+- macOS, and the Claude **desktop app** only. The `claude` CLI keeps its
   transcripts elsewhere and already shares them across accounts.
-- Every account sees every chat. You cannot share with some accounts and not
+- Every account sees every chat. You can't share with some accounts and not
   others.
-- Connectors are not touched. They stay with the account you added them to.
-- Sidebar groups are saved per account, so the folders you sort chats into do
-  not carry over. The chats themselves do.
-
-## Options
-
-| | |
-| --- | --- |
-| `--force` | run even while the Claude app is open |
-| `--no-banner` | skip the logo |
-| `--no-watch` | don't ask about the watcher |
-| `NO_COLOR=1` | no colours |
-| `CCMS_SUPPORT` | where the Claude app keeps its files |
-| `CCMS_HOME` | where CCMS keeps its backups (default `~/.ccms`) |
+- Connectors stay with the account you added them to.
+- Sidebar groups are saved per account, so the folders you sort chats into
+  don't carry over. The chats do.
 
 ## Licence
 
