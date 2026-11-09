@@ -764,6 +764,7 @@ cmd_watch() {
   heading "Watcher installed"
   pass "new accounts AND new workspaces are shared automatically"
   note "watching $(wc -l <"$STATE/watch-paths.txt" | tr -d ' ') paths"
+  note "runs: $(cd "$(dirname "$0")" && pwd -P)/$(basename "$0")"
   note "$PLIST"
   note "log: $STATE/watch.log"
   printf '\n'
