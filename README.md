@@ -1,26 +1,42 @@
-# ccpool
+# CCMS — Claude Code Multi-Session
 
-Make every Claude account on one Mac share one Claude Code sidebar.
+One Claude Code sidebar for every Claude account on your Mac.
 
 Sign out of account A, sign into account B, and your Claude Code sessions are
 gone. Switch back and they return. Move a personal plan onto a Team plan and the
 same thing happens — the list looks wiped. Nothing was deleted: the desktop app
-simply shows you one folder at a time, and signing in with a different email
-points it at a different folder.
+shows you one folder at a time, and signing in with a different email points it
+at a different folder.
 
-`ccpool` points them all at the same folder.
+`ccms` points them all at the same folder.
 
 ```
-$ ccpool pool --apply
-Pooling 14 folder(s):
+ ██████╗ ██████╗███╗   ███╗███████╗
+██╔════╝██╔════╝████╗ ████║██╔════╝
+██║     ██║     ██╔████╔██║███████╗
+██║     ██║     ██║╚██╔╝██║╚════██║
+╚██████╗╚██████╗██║ ╚═╝ ██║███████║
+ ╚═════╝ ╚═════╝╚═╝     ╚═╝╚══════╝
 
-  [claude-code-sessions] work@acme.com / Acme Inc
-      142 sessions -> _pool/everything
-  [claude-code-sessions] me@personal.com / Personal
-      176 sessions -> _pool/everything
-  ...
+  Claude Code Multi-Session v1.0
+  One sidebar for every Claude account on this Mac
 
-Done. Reopen the Claude desktop app; every pooled account now shows the same list.
+  Checking this Mac
+  ────────────────────────────────────────────────────────
+  ✓  macOS 27.0
+  ✓  Claude desktop app v4.23118.0
+     /Applications/Claude.app
+  ✓  application support
+     /Users/you/Library/Application Support/Claude
+  ✓  session stores
+     claude-code-sessions
+     local-agent-mode-sessions
+  ✓  14 folders, 3 accounts, 322 sessions on disk
+
+  Ready
+  ────────────────────────────────────────────────────────
+  ccms scan   what is on this machine
+  ccms share  dry-run, then --apply to do it
 ```
 
 One bash script. No Python, no jq, no Homebrew, nothing to install.
@@ -33,26 +49,9 @@ Not the `claude` CLI — its transcripts live in `~/.claude/projects/` and are
 **not** account-scoped, so they are already shared across accounts and need no
 help from this. Not the web app, whose history is server-side.
 
-Every command checks the desktop app's files are really where it expects before
-touching anything:
-
-```bash
-ccpool check
-```
-
-```
-  ok   macOS 27.0
-  ok   Claude desktop app: /Applications/Claude.app v4.23118.0
-  ok   app support: /Users/you/Library/Application Support/Claude
-  ok   session store(s): claude-code-sessions local-agent-mode-sessions
-  ok   14 folder(s), 3 account(s), 322 session(s) on disk
-  ok   watcher installed: no
-```
-
-A failing check names the exact path that was wrong and stops. Nothing is
-changed.
-
----
+Every command verifies the desktop app's files are really where it expects
+before touching anything. A failing check names the exact path that was wrong
+and stops, changing nothing.
 
 ## Why the sidebar empties
 
@@ -76,13 +75,13 @@ sessions sit on disk untouched.
 (`<organizationUuid>` is the workspace — one account can belong to several, like
 Slack workspaces. A personal plan has one; joining a Team adds another.)
 
-This list is **local, not server-backed**. You can verify it the same way this
-was verified: pool the folders, then open an account-A session while signed into
-account B. It opens, scrollback and all.
+This list is **local, not server-backed**. You can verify that the same way it
+was verified here: share the folders, then open an account-A session while
+signed into account B. It opens, scrollback and all.
 
-## What ccpool does
+## What ccms does
 
-It moves every pointer file into one shared pool and replaces each
+It moves every pointer file into one shared list and replaces each
 `<account>/<workspace>` folder with a symlink to it:
 
 ```
@@ -104,61 +103,61 @@ Because every account reads and writes the same directory:
 ## Install
 
 ```bash
-curl -fsSLO https://raw.githubusercontent.com/iam-joey/ccpool/main/ccpool.sh
-chmod +x ccpool.sh
-./ccpool.sh check
+curl -fsSLO https://raw.githubusercontent.com/OWNER/REPO/main/ccms.sh
+chmod +x ccms.sh
+./ccms.sh check
 ```
 
-Or clone, or copy the single file anywhere. To get `ccpool` as a command:
+Or clone, or copy the single file anywhere. To get `ccms` as a command:
 
 ```bash
-install -m 755 ccpool.sh /usr/local/bin/ccpool
+install -m 755 ccms.sh /usr/local/bin/ccms
 ```
 
 ## Use
 
 ```bash
-ccpool check            # are the desktop app's files where we expect?
-ccpool scan             # accounts, workspaces, session counts
-ccpool pool             # dry-run: exactly what would change
-ccpool pool --apply     # do it
-ccpool status           # are the links still intact?
-ccpool revert --apply   # undo: every session back where it came from
-ccpool watch --install  # pool accounts you sign into later, automatically
+ccms check             # are the desktop app's files where we expect?
+ccms scan              # accounts, workspaces, session counts
+ccms share             # dry-run: exactly what would change
+ccms share --apply     # do it
+ccms status            # are the links still intact?
+ccms revert --apply    # undo: every session back where it came from
+ccms watch --install   # share accounts you sign into later, automatically
 ```
 
 Quit the Claude desktop app first (`--apply` refuses while it is running; pass
-`--force` if you insist). `pool` is idempotent — run it as often as you like.
+`--force` if you insist). `share` is idempotent — run it as often as you like.
 
 ### Accounts you sign into later
 
-A brand-new email gets a brand-new empty folder, so it needs pooling once more.
-After `pool --apply` you are asked which you would rather do:
+A brand-new email gets a brand-new empty folder, so it needs sharing once more.
+After `share --apply` you are asked which you would rather do:
 
-- **run it yourself** — `ccpool pool --apply` after each new sign-in, or
+- **run it yourself** — `ccms share --apply` after each new sign-in, or
 - **install the watcher** — a macOS LaunchAgent that watches the two store
-  folders and reruns the pool when one changes. Event-driven: no cron, no
+  folders and reruns the share when one changes. Event-driven: no cron, no
   polling, no process sitting in memory. Remove it with
-  `ccpool watch --uninstall`.
+  `ccms watch --uninstall`.
 
 Nothing is installed unless you say yes. Non-interactive runs decline.
 
 ## Undo
 
-`pool --apply` writes `~/.ccpool/manifest.tsv` recording every file it moved and
-every folder it replaced, and keeps the original folders under
-`~/.ccpool/backups/`. `revert --apply` puts it all back.
+`share --apply` writes `~/.ccms/manifest.tsv` recording every file it moved and
+every folder it replaced, and keeps the original folders under `~/.ccms/backups/`.
+`revert --apply` puts it all back.
 
-Sessions you started *while* pooled have no original folder to return to;
-revert hands them to whichever account is signed in at the time and tells you
-so, rather than leaving them stranded in the pool.
+Sessions you started *while* shared have no original folder to return to; revert
+hands them to whichever account is signed in at the time and tells you so,
+rather than leaving them stranded.
 
 ## What is and is not shared
 
 Only the two session stores are touched. Most of what you might worry about was
 never account-scoped to begin with:
 
-| Thing | Account-scoped? | After ccpool |
+| Thing | Account-scoped? | After ccms |
 | --- | --- | --- |
 | Claude Code sessions (sidebar) | yes | **shared** |
 | Agent-mode sessions | yes | **shared** |
@@ -169,29 +168,41 @@ never account-scoped to begin with:
 | Account connectors | server-side, per account | untouched, still per account |
 
 That last row is worth saying plainly: connectors stay tied to the account that
-authorised them. Pooling the sidebar does not hand account A's Gmail to account
+authorised them. Sharing the sidebar does not hand account A's Gmail to account
 B.
 
 ## Limitations
 
-- **Sharing is symmetric and total.** Every pooled account sees every pooled
+- **Sharing is symmetric and total.** Every shared account sees every shared
   session. There is no "A and C but not B" — that would need copying, which
   brings back the duplicates and drift this avoids.
-- **Sessions started while pooled belong to no single account.** See *Undo*.
+- **Sessions started while shared belong to no single account.** See *Undo*.
 - **`scheduled-tasks.json` is per-account state**, and a folder symlink cannot
-  keep it separate. It is backed up before being shared, and `pool` says so.
-- **Linux is untested.** The paths are macOS. Point `CCPOOL_SUPPORT` elsewhere
-  at your own risk.
-- An app update could change the store layout. `ccpool check` is how you find
-  out; `revert` is how you back out.
+  keep it separate. It is backed up before being shared, and `share` says so.
+- **Linux is untested.** The paths are macOS. Point `CCMS_SUPPORT` elsewhere at
+  your own risk.
+- An app update could change the store layout. `ccms check` is how you find out;
+  `revert` is how you back out.
 
-## Environment variables
+## Options and environment
+
+| Flag | |
+| --- | --- |
+| `--force` | proceed even if the Claude desktop app is running |
+| `--no-banner` | skip the name card |
+| `--no-watch` | do not ask about the watcher after sharing |
 
 | Variable | Default |
 | --- | --- |
-| `CCPOOL_SUPPORT` | `~/Library/Application Support/Claude` |
-| `CCPOOL_HOME` | `~/.ccpool` (manifest, backups, watcher log) |
-| `CCPOOL_PLIST` | `~/Library/LaunchAgents/com.ccpool.watch.plist` |
+| `CCMS_SUPPORT` | `~/Library/Application Support/Claude` |
+| `CCMS_HOME` | `~/.ccms` (undo log, backups, watcher log) |
+| `CCMS_PLIST` | `~/Library/LaunchAgents/com.ccms.watch.plist` |
+| `CCMS_NO_BANNER` | unset; `1` skips the name card |
+| `NO_COLOR` | unset; any value turns colour off ([no-color.org](https://no-color.org)) |
+
+The name card draws for about two seconds and is skipped automatically when
+output is piped or redirected, or when running under the watcher, so logs and
+scripts are never slowed down by decoration.
 
 ## Prior art, and how this differs
 
@@ -210,14 +221,14 @@ Both **recover**: you notice sessions are missing and you pull them over, in one
 direction, once. The next sign-in needs doing again, and copies mean the same
 session exists twice and the two can drift apart.
 
-`ccpool` **shares**. One real folder, N symlinks, no copies, both directions, and
+`ccms` **shares**. One real folder, N symlinks, no copies, both directions, and
 it stays true — including for sessions created after you ran it.
 
 ## Tested on
 
-macOS 27.0, Claude desktop v4.23118.0, 3 accounts / 7 workspaces /
-322 sessions. Pool, status and revert are exercised end-to-end against a
-throwaway store, including a late sign-in and sessions created while pooled.
+macOS 27.0, Claude desktop v4.23118.0, 3 accounts / 7 workspaces / 322 sessions.
+Share, status and revert are exercised end-to-end against a throwaway store,
+including a late sign-in and sessions created while shared.
 
 `watch --install` generates its LaunchAgent plist from the same paths but has not
 been load-tested; please report anything odd.
