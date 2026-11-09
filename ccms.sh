@@ -34,14 +34,21 @@ set -u
 VERSION="1.0"
 POOL_DIRNAME="_pool"
 POOL_NAME="everything"
+# The symlink target, relative to the account folder the link sits in. This
+# MUST stay in step with pool_path() below - one absolute spelling, one
+# relative, and nothing but this comment keeping them honest.
+POOL_REL="../$POOL_DIRNAME/$POOL_NAME"
 AGENT_LABEL="com.ccms.watch"
 
 # The two per-account+workspace session stores the desktop app keeps.
 STORES="claude-code-sessions local-agent-mode-sessions"
 
-# Per-account state that is not a session. A folder symlink necessarily shares
-# these too, so we back them up and say so.
-NON_SESSION="scheduled-tasks.json"
+# A session is local_<id>.json. EVERYTHING ELSE in an account folder is
+# per-account state (scheduled-tasks.json today, an rpm/ directory and whatever
+# the app adds next), and a folder symlink cannot keep it separate. Deriving
+# the set from the session pattern means a new file the app invents is handled
+# the day it appears, instead of the day someone updates a hardcoded list.
+is_session() { case "${1##*/}" in local_*.json) return 0 ;; esac; return 1; }
 
 SUPPORT="${CCMS_SUPPORT:-$HOME/Library/Application Support/Claude}"
 STATE="${CCMS_HOME:-$HOME/.ccms}"
@@ -50,7 +57,12 @@ BACKUPS="$STATE/backups"
 PLIST="${CCMS_PLIST:-$HOME/Library/LaunchAgents/$AGENT_LABEL.plist}"
 
 TAB=$(printf '\t')
+NL='
+'
 PREFLIGHT_OK=1
+ROWS=""            # each_folder's output, computed once by preflight
+ACCT_DB=""         # accounts.tsv held in memory
+CS_CACHE=""        # session counts, keyed by directory
 NO_BANNER="${CCMS_NO_BANNER:-0}"
 
 # --------------------------------------------------------------------- look
@@ -75,6 +87,12 @@ rule() { printf '  %s───────────────────�
 heading() {
   printf '\n  %s%s%s\n' "$C_B" "$1" "$C_OFF"
   rule
+}
+
+dry_run_notice() {
+  heading "Dry run"
+  printf '  Nothing has changed. Run %sccms %s --apply%s to do it.\n\n' \
+    "$C_B" "$1" "$C_OFF"
 }
 
 # The name card. Draws once, for about two seconds, then gets out of the way.
@@ -109,7 +127,8 @@ die() { printf '%s\n' "$*" >&2; exit 2; }
 # ---------------------------------------------------------------- helpers
 
 is_uuid() {
-  [ ${#1} -eq 36 ] || return 1
+  # The glob below matches whole-word with one ? per character, so a match
+  # already implies 36 characters - no separate length test needed.
   case "$1" in
     ????????-????-????-????-????????????) ;;
     *) return 1 ;;
@@ -123,24 +142,55 @@ is_uuid() {
 # Absolute, symlink-resolved path of a directory, or "" if it does not resolve.
 resolve() { ( cd "$1" 2>/dev/null && pwd -P ) || true; }
 
-count_sessions() {
-  local n=0 f
-  for f in "$1"/local_*.json; do [ -e "$f" ] && n=$((n + 1)); done
-  printf '%s' "$n"
+# The one shared list for a store, and where a replaced folder is kept.
+pool_path() { printf '%s/%s/%s/%s' "$SUPPORT" "$1" "$POOL_DIRNAME" "$POOL_NAME"; }
+backup_folder() { printf '%s/%s/%s/%s.folder' "$BACKUPS" "$1" "$2" "$3"; }
+
+# The undo log: one row per thing done, same six columns every time.
+#   kind <TAB> store <TAB> account <TAB> workspace <TAB> target <TAB> origin
+manifest_add() {
+  printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$4" "$5" "${6:-}" >>"$MANIFEST"
 }
 
-short() { printf '%s' "${1:0:8}"; }
+# This script's own path, resolved once: it goes into the launchd agent and is
+# reported to the user, and those two must not be able to disagree.
+SELF="$(cd "$(dirname "$0")" && pwd -P)/$(basename "$0")"
+
+# Counts session files in a directory into $CNT. Pooled folders are all
+# symlinks to one directory, so the caller passes a key ("pool:<store>") that
+# collapses them and the directory is read once instead of once per account.
+CNT=0
+count_sessions() {
+  local key="$1" dir="${2:-$1}" rest n=0 f
+  case "$CS_CACHE" in
+    *"$NL$key$TAB"*) rest=${CS_CACHE#*"$NL$key$TAB"}; CNT=${rest%%"$NL"*}; return 0 ;;
+  esac
+  for f in "$dir"/local_*.json; do [ -e "$f" ] && n=$((n + 1)); done
+  CNT=$n
+  CS_CACHE="$CS_CACHE$NL$key$TAB$n"
+}
+
+# The directory whose sessions a folder actually shows, as a cache key. Linked
+# folders share one pool per store; anything else is counted on its own.
+count_key() {
+  case "$2" in
+    linked) COUNT_KEY="pool:$1"; COUNT_DIR=$(pool_path "$1") ;;
+    folder) COUNT_KEY="$3"; COUNT_DIR="$3" ;;
+    *)      COUNT_KEY=$(resolve "$3"); COUNT_DIR="$3"
+            [ -n "$COUNT_KEY" ] || COUNT_KEY="$3" ;;
+  esac
+}
 
 # plutil reads JSON as happily as it reads plists, and ships with macOS - so no
 # jq, no python. Missing key or missing file just yields "".
-jget() { plutil -extract "$2" raw -o - "$1" 2>/dev/null | head -1; }
+jget() { local v; v=$(plutil -extract "$2" raw -o - "$1" 2>/dev/null); printf '%s' "${v%%"$NL"*}"; }
 
 # Remember uuid -> email for whichever account is signed in right now, so later
 # runs can label folders even while signed into a different account.
 learn_accounts() {
   local cli="$HOME/.claude.json" uuid email org orgname
-  mkdir -p "$STATE"
-  touch "$STATE/accounts.tsv"
+  [ -d "$STATE" ] || mkdir -p "$STATE"
+  [ -f "$STATE/accounts.tsv" ] || touch "$STATE/accounts.tsv"
   [ -f "$cli" ] || return 0
   uuid=$(jget "$cli" oauthAccount.accountUuid)
   [ -n "$uuid" ] || return 0
@@ -155,14 +205,28 @@ learn_accounts() {
 _remember() {
   local id="$1" name="$2"
   [ -n "$id" ] && [ -n "$name" ] || return 0
-  grep -q "^$id$TAB" "$STATE/accounts.tsv" 2>/dev/null && return 0
+  [ -n "$ACCT_DB" ] || load_accounts
+  case "$ACCT_DB" in *"$NL$id$TAB"*) return 0 ;; esac
   printf '%s\t%s\n' "$id" "$name" >>"$STATE/accounts.tsv"
+  ACCT_DB="$ACCT_DB$id$TAB$name$NL"
+}
+
+# Read accounts.tsv once per run. Every folder row needs two lookups, so
+# grepping the file per lookup was most of the time `scan` spent.
+load_accounts() {
+  local line
+  ACCT_DB="$NL"
+  [ -f "$STATE/accounts.tsv" ] || return 0
+  while IFS= read -r line; do ACCT_DB="$ACCT_DB$line$NL"; done <"$STATE/accounts.tsv"
 }
 
 name_of() {
-  local id="$1" hit
-  hit=$(grep "^$id$TAB" "$STATE/accounts.tsv" 2>/dev/null | head -1)
-  if [ -n "$hit" ]; then printf '%s' "${hit#*$TAB}"; else printf '%s' "$(short "$id")"; fi
+  local id="$1" rest
+  [ -n "$ACCT_DB" ] || load_accounts
+  case "$ACCT_DB" in
+    *"$NL$id$TAB"*) rest=${ACCT_DB#*"$NL$id$TAB"}; printf '%s' "${rest%%"$NL"*}" ;;
+    *) printf '%s' "${id:0:8}" ;;
+  esac
 }
 
 label_for() { printf '%s / %s' "$(name_of "$1")" "$(name_of "$2")"; }
@@ -202,6 +266,11 @@ each_folder() {
     for acct_dir in "$store_dir"/*; do
       [ -d "$acct_dir" ] || continue
       acct=${acct_dir##*/}
+      # Load-bearing: the store root also holds our own _pool, and the app's
+      # own `skills-plugin`, whose children are a UUID/UUID pair shaped exactly
+      # like <account>/<workspace>. Matching only UUIDs keeps both out of the
+      # share set - failing closed on an unknown layout beats moving files
+      # that are not ours.
       is_uuid "$acct" || continue
       for org_dir in "$acct_dir"/*; do
         [ -e "$org_dir" ] || [ -L "$org_dir" ] || continue
@@ -228,22 +297,14 @@ each_folder() {
   done
 }
 
-# Resolved, de-duplicated directories behind those folders, read from stdin.
-# Pooled folders all point at one pool, so this collapses them to one entry.
-unique_dirs() {
-  local _s _a _o _k path
-  while IFS="$TAB" read -r _s _a _o _k path; do
-    [ -n "${path:-}" ] && resolve "$path"
-  done | sort -u
-}
-
 # --------------------------------------------------------------- preflight
 
 # Confirms this really is a Claude desktop install whose layout we understand.
 # Prints one line per check, naming the exact path, so a failure says which
 # thing was wrong instead of just "unsupported". Sets PREFLIGHT_OK.
 preflight() {
-  local app ver store found rows accts total real
+  local quiet="${1:-}"
+  local app ver store found rows accts total acct org kind path seen
   PREFLIGHT_OK=1
 
   if [ "$(uname -s)" = Darwin ]; then
@@ -291,18 +352,25 @@ preflight() {
     return 0
   fi
 
-  rows=$(each_folder)
+  ROWS=$(each_folder); rows=$ROWS
   if [ -n "$rows" ]; then
-    accts=$(printf '%s\n' "$rows" | cut -f2 | sort -u | wc -l | tr -d ' ')
-    # Pooled folders all resolve to one directory, so count that directory once.
-    total=0
-    while IFS= read -r real; do
-      [ -n "$real" ] || continue
-      total=$((total + $(count_sessions "$real")))
-    done <<EOF
-$(printf '%s\n' "$rows" | unique_dirs)
-EOF
-    pass "$(printf '%s\n' "$rows" | wc -l | tr -d ' ') folders, $accts accounts, $total sessions on disk"
+    # `quiet` skips only this summary line; every failure branch above still
+    # reports in full. scan and status print their own numbers, so computing
+    # these for them would be work thrown away.
+    if [ "$quiet" != quiet ]; then
+      accts=$(printf '%s\n' "$rows" | cut -f2 | sort -u | wc -l | tr -d ' ')
+      total=0
+      seen="$NL"
+      while IFS="$TAB" read -r store acct org kind path; do
+        [ -n "${store:-}" ] || continue
+        count_key "$store" "$kind" "$path"
+        case "$seen" in *"$NL$COUNT_KEY$NL"*) continue ;; esac
+        seen="$seen$COUNT_KEY$NL"
+        count_sessions "$COUNT_KEY" "$COUNT_DIR"
+        total=$((total + CNT))
+      done <<<"$rows"
+      pass "$(printf '%s\n' "$rows" | wc -l | tr -d ' ') folders, $accts accounts, $total sessions on disk"
+    fi
   else
     fail "the stores exist but hold no <account>/<workspace> folders"
     note "Nothing to share yet. Open a Code session in the app first."
@@ -316,7 +384,7 @@ EOF
 require_preflight() {
   local tmp
   tmp="${TMPDIR:-/tmp}/ccms.$$"
-  preflight >"$tmp" 2>&1
+  preflight quiet >"$tmp" 2>&1
   if [ "$PREFLIGHT_OK" != 1 ]; then
     printf 'ccms works on the Claude DESKTOP app for macOS. This machine:\n\n' >&2
     cat "$tmp" >&2
@@ -356,7 +424,8 @@ cmd_scan() {
       printf '\n  %s%s%s\n' "$C_BLUE" "$store" "$C_OFF"
       last=$store
     fi
-    n=$(count_sessions "$path")
+    count_key "$store" "$kind" "$path"
+    count_sessions "$COUNT_KEY" "$COUNT_DIR"; n=$CNT
     case "$kind" in
       linked)  mark="${C_GREEN}shared${C_OFF}" ;;
       folder)  mark="${C_YELLOW}on its own${C_OFF}" ;;
@@ -366,9 +435,7 @@ cmd_scan() {
     lbl=$(label_for "$acct" "$org")
     [ ${#lbl} -gt 46 ] && lbl="${lbl:0:45}…"      # keep the columns straight
     printf '    %-46s %s%4s%s  %s\n' "$lbl" "$C_B" "$n" "$C_OFF" "$mark"
-  done <<EOF
-$(each_folder)
-EOF
+  done <<<"$ROWS"
   printf '\n  %sshared%s = reads the common list   '    "$C_GREEN" "$C_OFF"
   printf '%son its own%s = still isolated\n\n' "$C_YELLOW" "$C_OFF"
 }
@@ -394,8 +461,8 @@ cmd_share() {
   }
   learn_accounts
 
-  local rows todo=0 store acct org kind path pool_dir n f extras
-  rows=$(each_folder)
+  local rows todo=0 store acct org kind path pool_dir f extras base dest
+  rows=$ROWS
 
   # Report first, so a dry-run and an --apply show the same thing.
   while IFS="$TAB" read -r store acct org kind path; do
@@ -403,13 +470,17 @@ cmd_share() {
     case "$kind" in
       linked) continue ;;
       foreign)
-        warn "$(short "$acct")/$(short "$org") is a symlink outside the store; left alone"
+        warn "$(label_for "$acct" "$org") is a symlink outside the store; left alone"
         continue ;;
     esac
     todo=$((todo + 1))
-  done <<EOF
-$rows
-EOF
+  done <<<"$rows"
+
+  # Assert the watcher's coverage on every apply, not only when something
+  # needed sharing: a new account can appear whose workspace an earlier wake
+  # already shared, and that run would otherwise leave the watch list stale.
+  # Dry runs change nothing, including this.
+  [ "$apply" = 1 ] && refresh_watch
 
   if [ "$todo" -eq 0 ]; then
     heading "Nothing to do"
@@ -426,19 +497,20 @@ EOF
     if [ "$kind" = relink ]; then
       printf '    %s→%s  repoint existing link to the shared list\n' "$C_CYAN" "$C_OFF"
     else
+      count_key "$store" "$kind" "$path"
+      count_sessions "$COUNT_KEY" "$COUNT_DIR"
       printf '    %s→%s  %s%s%s sessions join the shared list\n' \
-        "$C_CYAN" "$C_OFF" "$C_B" "$(count_sessions "$path")" "$C_OFF"
+        "$C_CYAN" "$C_OFF" "$C_B" "$CNT" "$C_OFF"
       extras=""
-      for f in $NON_SESSION; do [ -f "$path/$f" ] && extras="$extras $f"; done
+      for f in "$path"/*; do
+        [ -e "$f" ] && ! is_session "$f" && extras="$extras ${f##*/}"
+      done
       [ -n "$extras" ] && note "also shared (backed up first):$extras"
     fi
-  done <<EOF
-$rows
-EOF
+  done <<<"$rows"
 
   if [ "$apply" != 1 ]; then
-    heading "Dry run"
-    printf '  Nothing has changed. Run %sccms share --apply%s to do it.\n\n' "$C_B" "$C_OFF"
+    dry_run_notice share
     return 0
   fi
 
@@ -455,13 +527,13 @@ EOF
     [ -n "${store:-}" ] || continue
     case "$kind" in linked | foreign) continue ;; esac
 
-    pool_dir="$SUPPORT/$store/$POOL_DIRNAME/$POOL_NAME"
-    mkdir -p "$pool_dir"
+    pool_dir=$(pool_path "$store")
+    [ -d "$pool_dir" ] || mkdir -p "$pool_dir"
 
     if [ "$kind" = relink ]; then
       rm -f "$path"
-      ln -s "../$POOL_DIRNAME/$POOL_NAME" "$path"
-      printf 'link\t%s\t%s\t%s\t%s\t\n' "$store" "$acct" "$org" "$path" >>"$MANIFEST"
+      ln -s "$POOL_REL" "$path"
+      manifest_add link "$store" "$acct" "$org" "$path"
       pass "repointed  $(label_for "$acct" "$org")"
       continue
     fi
@@ -470,32 +542,34 @@ EOF
       [ -e "$f" ] || continue
       if [ -e "$pool_dir/${f##*/}" ]; then continue; fi   # same uuid, same session
       mv "$f" "$pool_dir/${f##*/}"
-      printf 'move\t%s\t%s\t%s\t%s\t%s\n' \
-        "$store" "$acct" "$org" "${f##*/}" "$pool_dir" >>"$MANIFEST"
+      manifest_add move "$store" "$acct" "$org" "${f##*/}" "$pool_dir"
     done
 
-    # Per-account files cannot survive a folder symlink; keep a copy either way.
-    for f in $NON_SESSION; do
-      [ -f "$path/$f" ] || continue
+    # Per-account state cannot survive a folder symlink. Back all of it up,
+    # and put one copy in the shared folder so it is not simply lost. Each
+    # copy gets a row, so revert removes exactly what we added.
+    for f in "$path"/*; do
+      [ -e "$f" ] || continue
+      is_session "$f" && continue
+      base=${f##*/}
       mkdir -p "$BACKUPS/$store/$acct/$org"
-      cp -p "$path/$f" "$BACKUPS/$store/$acct/$org/$f"
-      [ -e "$pool_dir/$f" ] || cp -p "$path/$f" "$pool_dir/$f"
+      cp -R -p "$f" "$BACKUPS/$store/$acct/$org/$base"
+      [ -e "$pool_dir/$base" ] && continue
+      cp -R -p "$f" "$pool_dir/$base"
+      manifest_add copy "$store" "$acct" "$org" "$base" "$pool_dir"
     done
 
-    mkdir -p "$BACKUPS/$store/$acct"
-    mv "$path" "$BACKUPS/$store/$acct/$org.folder"
-    ln -s "../$POOL_DIRNAME/$POOL_NAME" "$path"
-    printf 'link\t%s\t%s\t%s\t%s\t%s\n' \
-      "$store" "$acct" "$org" "$path" "$BACKUPS/$store/$acct/$org.folder" >>"$MANIFEST"
+    dest=$(backup_folder "$store" "$acct" "$org")
+    mkdir -p "$(dirname "$dest")"
+    mv "$path" "$dest"
+    ln -s "$POOL_REL" "$path"
+    manifest_add link "$store" "$acct" "$org" "$path" "$dest"
     pass "shared     $(label_for "$acct" "$org")"
-  done <<EOF
-$rows
-EOF
+  done <<<"$rows"
 
   heading "Done"
   printf '  Reopen the Claude desktop app. Every account now shows the same list.\n'
   note "undo log: $MANIFEST"
-  refresh_watch
   [ "$nowatch" = 1 ] || offer_watcher
   printf '\n'
   return 0
@@ -524,32 +598,26 @@ offer_watcher() {
 cmd_status() {
   require_preflight
   learn_accounts
-  local store acct org kind path bad=0 pooled=0 n
+  local store acct org kind path bad=0 pooled=0 n msg
   heading "Shared lists"
   for store in $STORES; do
-    [ -d "$SUPPORT/$store/$POOL_DIRNAME/$POOL_NAME" ] || continue
-    n=$(count_sessions "$SUPPORT/$store/$POOL_DIRNAME/$POOL_NAME")
+    [ -d "$(pool_path "$store")" ] || continue
+    count_sessions "pool:$store" "$(pool_path "$store")"; n=$CNT
     printf '  %-30s %s%s%s sessions\n' "$store" "$C_B" "$n" "$C_OFF"
   done
 
   while IFS="$TAB" read -r store acct org kind path; do
     [ -n "${store:-}" ] || continue
     case "$kind" in
-      linked) pooled=$((pooled + 1)) ;;
-      folder)
-        [ "$bad" -eq 0 ] && heading "Needs attention"
-        warn "not shared  $(label_for "$acct" "$org")"
-        note "$store"
-        bad=$((bad + 1)) ;;
-      *)
-        [ "$bad" -eq 0 ] && heading "Needs attention"
-        warn "odd link    $(label_for "$acct" "$org") ($kind)"
-        note "$store"
-        bad=$((bad + 1)) ;;
+      linked) pooled=$((pooled + 1)); continue ;;
+      folder) msg="not shared  $(label_for "$acct" "$org")" ;;
+      *)      msg="odd link    $(label_for "$acct" "$org") ($kind)" ;;
     esac
-  done <<EOF
-$(each_folder)
-EOF
+    [ "$bad" -eq 0 ] && heading "Needs attention"
+    warn "$msg"
+    note "$store"
+    bad=$((bad + 1))
+  done <<<"$ROWS"
 
   if [ "$bad" -eq 0 ]; then
     heading "All good"
@@ -574,16 +642,15 @@ cmd_revert() {
   [ -f "$MANIFEST" ] || die "no manifest at $MANIFEST - nothing to revert."
 
   local moves links
-  moves=$(grep -c '^move'"$TAB" "$MANIFEST" 2>/dev/null | tr -d ' ')
-  links=$(grep -c '^link'"$TAB" "$MANIFEST" 2>/dev/null | tr -d ' ')
+  moves=$(grep -c "^move$TAB" "$MANIFEST")
+  links=$(grep -c "^link$TAB" "$MANIFEST")
   heading "$([ "$apply" = 1 ] && echo Undoing || echo "Would undo")"
   printf '  %s%s%s session files back to their own folders\n' "$C_B" "$moves" "$C_OFF"
   printf '  %s%s%s folders restored\n' "$C_B" "$links" "$C_OFF"
   note "from $MANIFEST"
 
   if [ "$apply" != 1 ]; then
-    heading "Dry run"
-    printf '  Nothing has changed. Run %sccms revert --apply%s to do it.\n\n' "$C_B" "$C_OFF"
+    dry_run_notice revert
     return 0
   fi
   if app_running && [ "$force" != 1 ]; then
@@ -618,13 +685,20 @@ cmd_revert() {
   # account signed in right now (or the first folder we restored) and say so.
   local cur pool f left w s p dest
   cur=$(jget "$SUPPORT/config.json" lastKnownAccountUuid)
-  for store in $STORES; do
-    pool="$SUPPORT/$store/$POOL_DIRNAME/$POOL_NAME"
-    [ -d "$pool" ] || continue
-    for f in $NON_SESSION; do rm -f "$pool/$f"; done   # our copy; originals are back
 
-    left=0
-    for f in "$pool"/local_*.json; do [ -e "$f" ] && left=$((left + 1)); done
+  # Remove the per-account state we copied into the shared folder. The
+  # originals went back with their folders, and the rows say exactly what we
+  # put there, so nothing is guessed at.
+  while IFS="$TAB" read -r w s acct org p b; do
+    [ "$w" = copy ] || continue
+    [ -n "${b:-}" ] && [ -n "${p:-}" ] && rm -rf "${b:?}/${p:?}"
+  done <"$MANIFEST"
+
+  for store in $STORES; do
+    pool=$(pool_path "$store")
+    [ -d "$pool" ] || continue
+
+    count_sessions "revert:$store" "$pool"; left=$CNT
     if [ "$left" -gt 0 ]; then
       dest=""
       while IFS="$TAB" read -r w s acct org p b; do
@@ -678,15 +752,12 @@ watch_paths() {
 }
 
 write_plist() {
-  local me watched path
-  me=$(cd "$(dirname "$0")" && pwd -P)/$(basename "$0")
+  local watched path
   watched=""
   while IFS= read -r path; do
     [ -n "$path" ] || continue
     watched="$watched$(printf '\n    <string>%s</string>' "$(xml_esc "$path")")"
-  done <<EOF
-$(watch_paths)
-EOF
+  done <<<"$(watch_paths)"
   [ -n "$watched" ] || return 1
 
   mkdir -p "$(dirname "$PLIST")" "$STATE"
@@ -700,7 +771,7 @@ EOF
   <key>ProgramArguments</key>
   <array>
     <string>/bin/bash</string>
-    <string>$(xml_esc "$me")</string>
+    <string>$(xml_esc "$SELF")</string>
     <string>share</string>
     <string>--apply</string>
     <string>--force</string>
@@ -764,7 +835,7 @@ cmd_watch() {
   heading "Watcher installed"
   pass "new accounts AND new workspaces are shared automatically"
   note "watching $(wc -l <"$STATE/watch-paths.txt" | tr -d ' ') paths"
-  note "runs: $(cd "$(dirname "$0")" && pwd -P)/$(basename "$0")"
+  note "runs: $SELF"
   note "$PLIST"
   note "log: $STATE/watch.log"
   printf '\n'
@@ -808,10 +879,10 @@ cmd="${1:-}"
 banner
 
 case "$cmd" in
-  check)        cmd_check "$@" ;;
-  scan)         cmd_scan "$@" ;;
-  share | pool) cmd_share "$@" ;;
-  status)       cmd_status "$@" ;;
+  check)        cmd_check ;;
+  scan)         cmd_scan ;;
+  share)        cmd_share "$@" ;;
+  status)       cmd_status ;;
   revert)       cmd_revert "$@" ;;
   watch)        cmd_watch "$@" ;;
   -h | --help | help | "") usage 0 ;;

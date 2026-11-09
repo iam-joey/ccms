@@ -11,12 +11,34 @@
 
 One Claude Code sidebar for every Claude account on your Mac.
 
-Sign in with a different account and your Claude Code chats are gone. Switch
-back and they return. Nothing was deleted — the app keeps a separate folder per
-account, and shows you one of them at a time.
+## The problem
 
-CCMS points every account at the same folder, so they all see the same chats.
-New chats show up everywhere, both ways.
+Say you have two accounts, **A** (personal) and **B** (work).
+
+| You are signed in as | Your sidebar shows |
+| --- | --- |
+| A | A's chats |
+| B | nothing |
+| A again | A's chats, all back |
+
+Nothing was deleted. The Claude app keeps a separate folder of chats for each
+account, and only ever shows you one of them.
+
+Same thing happens when a plan expires, when you join a Team, or when you add
+a third account.
+
+## What CCMS does
+
+It puts the chats in one folder and points every account at it.
+
+| You are signed in as | Your sidebar shows |
+| --- | --- |
+| A | every chat |
+| B | every chat |
+| a brand new account C | every chat |
+
+Start a chat while on B, switch to A — it's there. It works both ways, for as
+many accounts as you have.
 
 One bash script. Nothing to install.
 
