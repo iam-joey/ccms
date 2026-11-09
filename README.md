@@ -9,7 +9,10 @@
  ╚═════╝ ╚═════╝╚═╝     ╚═╝╚══════╝
 ```
 
-**Share your Claude Code sessions across every Claude account on your Mac.**
+**Share your Claude Code sessions across every Claude account on one Mac.**
+
+Many accounts, one machine — personal, work, Team, old plan, new plan. It does
+*not* copy sessions between computers.
 
 For the Claude desktop app on macOS. One bash script, nothing to install.
 
@@ -109,6 +112,10 @@ it replaced, in `~/.ccms`. `ccms revert --apply` puts it all back.
 - Connectors stay with the account you added them to.
 - Sidebar groups are saved per account, so the folders you sort chats into
   don't carry over. The chats do.
+- One Mac only. Moving sessions to another computer is a different job: the
+  chat itself lives in `~/.claude/projects`, in folders named after the path
+  you ran it from — your username included — so it does not survive the move
+  on its own.
 
 ## Licence
 
