@@ -58,13 +58,26 @@ flowchart LR
 | B | every chat |
 | a brand new account C | every chat |
 
-Start a chat while on B, switch to A — it's there. It works both ways.
-
 **Any number of accounts.** Two, five, ten — they all point at the same list,
 and each new one joins it. There is no limit and nothing to configure per
 account.
 
 One bash script. Nothing to install.
+
+## It works in every direction
+
+This is sharing, not a one-time export. Every account reads *and writes* the
+same list, so it works from any account to any other:
+
+- **Carry on a chat from another account.** Start it signed in as A, switch to
+  B, open it and keep typing. Full scrollback, full context — it is the same
+  session, not a copy of it.
+- **New chats appear everywhere at once.** Start one on B and it is already
+  there on A and C. Nothing to re-run, no sync step, no waiting.
+- **Renaming and archiving carry over too**, because the title and the
+  archived flag live inside the session itself.
+- **Nothing can drift.** There is one real folder and the accounts are
+  symlinks to it, so there is no second copy to fall out of date.
 
 ## Install
 
@@ -137,6 +150,8 @@ every folder it replaced, in `~/.ccms`. `ccms revert --apply` puts it all back.
 - Every account sees every chat. You cannot share with some accounts and not
   others.
 - Connectors are not touched. They stay with the account you added them to.
+- Sidebar groups are saved per account, so the folders you sort chats into do
+  not carry over. The chats themselves do.
 
 ## Options
 
