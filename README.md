@@ -103,7 +103,7 @@ Because every account reads and writes the same directory:
 ## Install
 
 ```bash
-curl -fsSLO https://raw.githubusercontent.com/OWNER/REPO/main/ccms.sh
+curl -fsSLO https://raw.githubusercontent.com/iam-joey/ccms/main/ccms.sh
 chmod +x ccms.sh
 ./ccms.sh check
 ```
@@ -129,16 +129,26 @@ ccms watch --install   # share accounts you sign into later, automatically
 Quit the Claude desktop app first (`--apply` refuses while it is running; pass
 `--force` if you insist). `share` is idempotent — run it as often as you like.
 
-### Accounts you sign into later
+### Accounts and workspaces you add later
 
-A brand-new email gets a brand-new empty folder, so it needs sharing once more.
+Two things create a new empty folder, and both need sharing once more:
+
+- **a new account** — signing in with another email, and
+- **a new workspace on an existing account** — joining a Team, for instance.
+  This one surprises people, because the email never changed.
+
 After `share --apply` you are asked which you would rather do:
 
-- **run it yourself** — `ccms share --apply` after each new sign-in, or
-- **install the watcher** — a macOS LaunchAgent that watches the two store
-  folders and reruns the share when one changes. Event-driven: no cron, no
-  polling, no process sitting in memory. Remove it with
-  `ccms watch --uninstall`.
+- **run it yourself** — `ccms share --apply` whenever either happens, or
+- **install the watcher** — a macOS LaunchAgent that reruns the share for you.
+  Event-driven: no cron, no polling, no process sitting in memory. Remove it
+  with `ccms watch --uninstall`.
+
+The watcher deliberately watches **two levels**: the store roots, where a new
+account appears, and each account folder, where a new workspace appears. A new
+workspace does not change the store root's mtime, so watching only the roots
+would miss exactly the case above. Accounts that show up later are added to the
+watch list automatically on the next share.
 
 Nothing is installed unless you say yes. Non-interactive runs decline.
 

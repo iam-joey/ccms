@@ -495,6 +495,7 @@ EOF
   heading "Done"
   printf '  Reopen the Claude desktop app. Every account now shows the same list.\n'
   note "undo log: $MANIFEST"
+  refresh_watch
   [ "$nowatch" = 1 ] || offer_watcher
   printf '\n'
   return 0
@@ -653,27 +654,40 @@ cmd_revert() {
   printf '\n' 
 }
 
-cmd_watch() {
-  local mode="${1:-}" me watched store
-  case "$mode" in
-    --uninstall)
-      launchctl unload "$PLIST" 2>/dev/null
-      rm -f "$PLIST"
-      pass "watcher removed"
-      return 0 ;;
-    --install) ;;
-    "") if [ -f "$PLIST" ]; then pass "watcher installed"; else info "watcher not installed"; fi
-        return 0 ;;
-    *) die "watch: unknown option $mode" ;;
-  esac
+# Minimal XML escaping for paths that go into the plist.
+xml_esc() { printf '%s' "$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'; }
 
+# Everything launchd has to watch.
+#
+# A new ACCOUNT appears as a new folder inside a store root, so watching the
+# store root catches it. A new WORKSPACE appears inside an existing account
+# folder - joining a Team, for instance - and that does NOT change the store
+# root's mtime at all. Watch only the store roots and a new workspace is
+# invisible, which is exactly the case that catches people out. So both levels
+# are watched.
+watch_paths() {
+  local store acct
+  for store in $STORES; do
+    [ -d "$SUPPORT/$store" ] || continue
+    printf '%s\n' "$SUPPORT/$store"
+    for acct in "$SUPPORT/$store"/*; do
+      [ -d "$acct" ] || continue
+      is_uuid "${acct##*/}" && printf '%s\n' "$acct"
+    done
+  done
+}
+
+write_plist() {
+  local me watched path
   me=$(cd "$(dirname "$0")" && pwd -P)/$(basename "$0")
   watched=""
-  for store in $STORES; do
-    [ -d "$SUPPORT/$store" ] && \
-      watched="$watched$(printf '\n    <string>%s</string>' "$SUPPORT/$store")"
-  done
-  [ -n "$watched" ] || die "no store to watch."
+  while IFS= read -r path; do
+    [ -n "$path" ] || continue
+    watched="$watched$(printf '\n    <string>%s</string>' "$(xml_esc "$path")")"
+  done <<EOF
+$(watch_paths)
+EOF
+  [ -n "$watched" ] || return 1
 
   mkdir -p "$(dirname "$PLIST")" "$STATE"
   cat >"$PLIST" <<EOT
@@ -686,7 +700,7 @@ cmd_watch() {
   <key>ProgramArguments</key>
   <array>
     <string>/bin/bash</string>
-    <string>$me</string>
+    <string>$(xml_esc "$me")</string>
     <string>share</string>
     <string>--apply</string>
     <string>--force</string>
@@ -694,25 +708,65 @@ cmd_watch() {
   </array>
   <key>EnvironmentVariables</key>
   <dict>
-    <key>CCMS_SUPPORT</key><string>$SUPPORT</string>
-    <key>CCMS_HOME</key><string>$STATE</string>
+    <key>CCMS_SUPPORT</key><string>$(xml_esc "$SUPPORT")</string>
+    <key>CCMS_HOME</key><string>$(xml_esc "$STATE")</string>
   </dict>
   <key>WatchPaths</key>
   <array>$watched
   </array>
   <key>RunAtLoad</key><false/>
-  <key>StandardOutPath</key><string>$STATE/watch.log</string>
-  <key>StandardErrorPath</key><string>$STATE/watch.log</string>
+  <key>StandardOutPath</key><string>$(xml_esc "$STATE/watch.log")</string>
+  <key>StandardErrorPath</key><string>$(xml_esc "$STATE/watch.log")</string>
 </dict>
 </plist>
 EOT
+  watch_paths >"$STATE/watch-paths.txt"
+  return 0
+}
+
+# Accounts that appear AFTER the watcher was installed need watching too, or
+# the first new workspace under one of them is missed. Cheap to re-check, and
+# it only rewrites the agent when the set of paths actually changed.
+refresh_watch() {
+  [ -f "$PLIST" ] || return 0
+  local now
+  now=$(watch_paths)
+  [ "$now" = "$(cat "$STATE/watch-paths.txt" 2>/dev/null)" ] && return 0
+  write_plist || return 0
+  launchctl unload "$PLIST" 2>/dev/null
+  launchctl load "$PLIST" 2>/dev/null
+  info "watcher now covers $(printf '%s\n' "$now" | wc -l | tr -d ' ') paths"
+  return 0
+}
+
+cmd_watch() {
+  local mode="${1:-}"
+  case "$mode" in
+    --uninstall)
+      launchctl unload "$PLIST" 2>/dev/null
+      rm -f "$PLIST" "$STATE/watch-paths.txt"
+      pass "watcher removed"
+      return 0 ;;
+    --install) ;;
+    "") if [ -f "$PLIST" ]; then
+          pass "watcher installed"
+          note "covers $(wc -l <"$STATE/watch-paths.txt" 2>/dev/null | tr -d ' ') paths"
+        else
+          info "watcher not installed"
+        fi
+        return 0 ;;
+    *) die "watch: unknown option $mode" ;;
+  esac
+
+  write_plist || die "no store to watch."
   launchctl unload "$PLIST" 2>/dev/null
   launchctl load "$PLIST" || die "launchctl could not load $PLIST"
   heading "Watcher installed"
-  pass "accounts you sign into from now on are shared automatically"
+  pass "new accounts AND new workspaces are shared automatically"
+  note "watching $(wc -l <"$STATE/watch-paths.txt" | tr -d ' ') paths"
   note "$PLIST"
   note "log: $STATE/watch.log"
-  printf '\n' 
+  printf '\n'
 }
 
 usage() {
