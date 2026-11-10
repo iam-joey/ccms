@@ -109,7 +109,10 @@ it replaced, in `~/.ccms`. `ccms revert --apply` puts it all back.
   transcripts elsewhere and already shares them across accounts.
 - Every account sees every chat. You can't share with some accounts and not
   others.
-- Connectors stay with the account you added them to.
+- CCMS shares what is on your Mac. Anything kept on Anthropic's servers stays
+  with the account that made it — connectors, and published artifacts (the
+  link is in the chat and travels with it, but opening it depends on your
+  claude.ai access).
 - Sidebar groups are saved per account, so the folders you sort chats into
   don't carry over. The chats do.
 - One Mac only. Moving sessions to another computer is a different job: the
