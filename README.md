@@ -14,8 +14,6 @@
 Many accounts, one machine — personal, work, Team, old plan, new plan. It does
 *not* copy sessions between computers.
 
-For the Claude desktop app on macOS. One bash script, nothing to install.
-
 ## The problem
 
 Your chats are stored per account, so each account sees only its own:
@@ -42,13 +40,12 @@ flowchart LR
     D["👤 ...account 7"] --> P
 ```
 
-Any number of accounts. Nothing to configure per account.
+Any number of accounts. Start a chat on A, switch to B, open it and keep
+typing — same session, full scrollback. New chats appear everywhere at once.
 
-**It works both ways.** Start a chat on A, switch to B, open it and keep
-typing — same session, full scrollback. A chat started on B is already on A.
-Renaming and archiving carry over too.
+## Setup
 
-## Install
+**1. Download it.**
 
 ```bash
 curl -fsSLO https://raw.githubusercontent.com/iam-joey/ccms/main/ccms.sh
@@ -56,10 +53,19 @@ chmod +x ccms.sh
 ./ccms.sh check
 ```
 
-That's the whole install — run it as `./ccms.sh <command>`.
+**2. Quit the Claude app — properly.** `Cmd+Q`, not just closing the window.
+It will not move your chats while the app is running. (Or add `--force` to the
+next command and skip this.)
 
-Optional: to type `ccms` from anywhere instead, move the file you just
-downloaded onto your PATH.
+**3. Share them.**
+
+```bash
+./ccms.sh share --apply
+```
+
+Reopen Claude. Every account now shows the same chats.
+
+Optional — to type `ccms` instead of `./ccms.sh` from anywhere:
 
 ```bash
 sudo install -m 755 ccms.sh /usr/local/bin/ccms
@@ -77,8 +83,7 @@ sudo install -m 755 ccms.sh /usr/local/bin/ccms
 | `ccms revert --apply` | undoes it — every chat back where it came from |
 | `ccms watch --install` | keeps new accounts shared automatically |
 
-Quit the Claude app before `--apply`, or add `--force`. Run `ccms --help` for
-the rest.
+`--force` runs even while Claude is open. `ccms --help` for the rest.
 
 ## New accounts
 
@@ -98,27 +103,21 @@ flowchart LR
 The watcher sleeps until a folder changes — no cron, no polling, nothing
 running in the background.
 
-## Undo
-
-`ccms share --apply` writes down everything it moved and backs up every folder
-it replaced, in `~/.ccms`. `ccms revert --apply` puts it all back.
-
 ## Notes
 
-- macOS, and the Claude **desktop app** only. The `claude` CLI keeps its
+- **Undo:** `share --apply` records everything it moved and backs up every
+  folder it replaced, in `~/.ccms`. `ccms revert --apply` puts it all back.
+- macOS and the Claude **desktop app** only. The `claude` CLI keeps its
   transcripts elsewhere and already shares them across accounts.
-- Every account sees every chat. You can't share with some accounts and not
-  others.
+- Every account sees every chat. You can't share with some and not others.
 - CCMS shares what is on your Mac. Anything kept on Anthropic's servers stays
   with the account that made it — connectors, and published artifacts (the
-  link is in the chat and travels with it, but opening it depends on your
-  claude.ai access).
+  link travels with the chat, but opening it depends on your claude.ai access).
 - Sidebar groups are saved per account, so the folders you sort chats into
   don't carry over. The chats do.
-- One Mac only. Moving sessions to another computer is a different job: the
-  chat itself lives in `~/.claude/projects`, in folders named after the path
-  you ran it from — your username included — so it does not survive the move
-  on its own.
+- One Mac only. The chat itself lives in `~/.claude/projects`, in folders
+  named after the path you ran it from, username included — so copying
+  sessions to another computer is a different job.
 
 ## Licence
 
